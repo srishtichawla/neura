@@ -1,0 +1,20 @@
+version: "3.8"
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: research_db
+    environment:
+      POSTGRES_USER: researchuser
+      POSTGRES_PASSWORD: researchpass
+      POSTGRES_DB: research_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U researchuser -d research_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+volumes:
+  pgdata:
