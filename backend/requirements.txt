@@ -7,9 +7,9 @@ fastapi==0.115.4
 uvicorn[standard]==0.32.0
 psycopg2-binary==2.9.9
 pgvector==0.3.5
-sentence-transformers==3.3.0
 cohere==5.11.4
 tiktoken==0.8.0
 python-dotenv==1.0.1
 python-multipart==0.0.12
 rank-bm25==0.2.2
+pymupdf==1.24.0
