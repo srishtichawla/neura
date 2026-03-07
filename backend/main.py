@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routes import router
-from db.postgres import init_db
+from dotenv import load_dotenv
+load_dotenv()
 
 app = FastAPI(title="Neura AI Backend")
 
@@ -13,12 +13,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.on_event("startup")
-async def startup():
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+@app.get("/")
+def root():
+    return {"status": "Neura AI running"}
+
+try:
+    from api.routes import router
+    from db.postgres import init_db
+    app.include_router(router, prefix="/api")
     init_db()
-
-app.include_router(router, prefix="/api")
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    print("✅ All systems started")
+except Exception as e:
+    import traceback
+    print(f"❌ Startup error: {e}")
+    traceback.print_exc()
