@@ -16,7 +16,7 @@ interface Store {
 }
 
 export const useStore = create<Store>()(
-  persist(
+  
     (set) => ({
       reports: [],
       saveReport: (r) => set((s) => ({
