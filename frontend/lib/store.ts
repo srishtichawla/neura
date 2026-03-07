@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 
 export interface Report {
   id: string;
@@ -15,21 +14,16 @@ interface Store {
   deleteReport: (id: string) => void;
 }
 
-export const useStore = create<Store>()(
-  
-    (set) => ({
-      reports: [],
-      saveReport: (r) => set((s) => ({
-        reports: [{
-          ...r,
-          id: crypto.randomUUID(),
-          createdAt: new Date().toISOString(),
-        }, ...s.reports]
-      })),
-      deleteReport: (id) => set((s) => ({
-        reports: s.reports.filter(r => r.id !== id)
-      })),
-    }),
-    { name: 'research-reports' }
-  )
-);
+export const useStore = create<Store>()((set) => ({
+  reports: [],
+  saveReport: (r) => set((s) => ({
+    reports: [{
+      ...r,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+    }, ...s.reports]
+  })),
+  deleteReport: (id) => set((s) => ({
+    reports: s.reports.filter(r => r.id !== id)
+  })),
+}));
