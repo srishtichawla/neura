@@ -66,7 +66,7 @@ export default function Home() {
         if (done) break;
         const lines = decoder.decode(value).split("\n").filter(l => l.startsWith("data: "));
         for (const line of lines) {
-          const data = JSON.parse(line.slice(6));
+          try { let data; try { data = JSON.parse(line.slice(6)) } catch(e) { continue };
           setActiveStep(data.node);
           setSteps(prev => prev.includes(data.node) ? prev : [...prev, data.node]);
           if (data.node === "writer" && data.state?.writer?.final_report) {
