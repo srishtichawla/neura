@@ -52,7 +52,7 @@ export default function Home() {
 
   const runResearch = async () => {
     if (!topic.trim() || loading) return;
-    setLoading(true); setSteps([]); setStreamedReport("");
+    setLoading(true); let buffer = ""; setSteps([]); setStreamedReport("");
     setFullReport(""); setCitations([]); setActiveStep(""); setShowCitations(false);
     try {
       const res = await fetch("https://neura-e4cg.onrender.com/api/research/stream", {
@@ -64,13 +64,15 @@ export default function Home() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n").filter(l => l.startsWith("data: "));
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
         for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
           let data;
           try {
             const jsonStr = line.slice(6).trim();
-            if (!jsonStr) continue;
+            if (!jsonStr || jsonStr === "[DONE]") continue;
             data = JSON.parse(jsonStr);
           } catch(e) { continue; }
           setActiveStep(data.node);
