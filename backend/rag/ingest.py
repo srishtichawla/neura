@@ -33,7 +33,7 @@ def ingest_text(text: str, source: str = "manual", metadata: dict = {}):
         cur.execute("""
             INSERT INTO documents (content, metadata, source, embedding, bm25_tokens)
             VALUES (%s, %s, %s, %s, %s)
-        """, (chunk, json.dumps(metadata), source, embedding, json.dumps(bm25_tokens)))
+        """, (chunk, json.dumps(metadata), source, json.dumps(embedding), json.dumps(bm25_tokens)))
     conn.commit(); cur.close(); conn.close()
     print(f"✅ Ingested {len(chunks)} chunks from '{source}'")
     return len(chunks)
