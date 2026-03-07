@@ -9,7 +9,7 @@ from db.postgres import init_db
 
 app = FastAPI(title="Research Assistant API")
 app.add_middleware(CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["https://neura-black.vercel.app"],
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(router, prefix="/api")
 
