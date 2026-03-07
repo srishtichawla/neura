@@ -35,7 +35,7 @@ export default function Home() {
 
   // Load existing docs on mount
   useEffect(() => {
-    fetch("http://localhost:8000/api/documents")
+    fetch("https://neura-production.up.railway.app/api/documents")
       .then(r => r.json())
       .then(d => setDocs(d.documents || []))
       .catch(() => {});
@@ -55,7 +55,7 @@ export default function Home() {
     setLoading(true); setSteps([]); setStreamedReport("");
     setFullReport(""); setCitations([]); setActiveStep(""); setShowCitations(false);
     try {
-      const res = await fetch("http://localhost:8000/api/research/stream", {
+      const res = await fetch("https://neura-production.up.railway.app/api/research/stream", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic }),
       });
@@ -90,7 +90,7 @@ export default function Home() {
     const form = new FormData();
     form.append("file", file);
     try {
-      const res = await fetch("http://localhost:8000/api/ingest", { method: "POST", body: form });
+      const res = await fetch("https://neura-production.up.railway.app/api/ingest", { method: "POST", body: form });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail || "Upload failed");
