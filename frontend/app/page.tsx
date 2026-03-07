@@ -98,7 +98,14 @@ export default function Home() {
     const form = new FormData();
     form.append("file", file);
     try {
-      const res = await fetch("https://neura-e4cg.onrender.com/api/ingest", { method: "POST", body: form });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 60000);
+      const res = await fetch("https://neura-e4cg.onrender.com/api/ingest", { 
+        method: "POST", 
+        body: form,
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail || "Upload failed");
