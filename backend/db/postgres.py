@@ -1,24 +1,30 @@
-import os, psycopg2
+import os
+import psycopg2
 from dotenv import load_dotenv
 load_dotenv()
 
+def get_db_url():
+    url = os.environ["DATABASE_URL"]
+    # Railway uses postgres:// but psycopg2 needs postgresql://
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    return url
+
 def get_conn(register=True):
-    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    conn = psycopg2.connect(get_db_url())
     if register:
         from pgvector.psycopg2 import register_vector
         register_vector(conn)
     return conn
 
 def init_db():
-    # First connect WITHOUT registering vector (extension doesn't exist yet)
-    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    conn = psycopg2.connect(get_db_url())
     cur = conn.cursor()
     cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
     conn.commit()
     cur.close()
     conn.close()
 
-    # Now connect WITH vector registered
     conn = get_conn(register=True)
     cur = conn.cursor()
     cur.execute("""
@@ -31,9 +37,11 @@ def init_db():
             bm25_tokens JSONB DEFAULT '{}'
         );
     """)
-    cur.execute("CREATE INDEX IF NOT EXISTS docs_embedding_idx ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);")
-    conn.commit(); cur.close(); conn.close()
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS docs_embedding_idx
+        ON documents USING hnsw (embedding vector_cosine_ops);
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
     print("✅ Database initialized")
-
-if __name__ == "__main__":
-    init_db()
