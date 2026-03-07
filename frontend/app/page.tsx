@@ -34,12 +34,7 @@ export default function Home() {
   const { reports, saveReport, deleteReport } = useStore();
 
   // Load existing docs on mount
-  useEffect(() => {
-    fetch("https://neura-e4cg.onrender.com/api/documents")
-      .then(r => r.json())
-      .then(d => setDocs(d.documents || []))
-      .catch(() => {});
-  }, []);
+  
 
   const typewrite = useCallback((text: string) => {
     setStreamedReport("");
