@@ -120,12 +120,3 @@ neura/
 └── docker-compose.yml
 ```
 
----
-
-<div align="center">
-
-Built with ❤️ by [Srishti Chawla](https://github.com/srishtichawla)
-
-*If you found this useful, give it a ⭐*
-
-</div>
