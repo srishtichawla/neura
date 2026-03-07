@@ -64,9 +64,15 @@ export default function Home() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const lines = decoder.decode(value).split("\n").filter(l => l.startsWith("data: "));
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n").filter(l => l.startsWith("data: "));
         for (const line of lines) {
-          let data; try { data = JSON.parse(line.slice(6)); } catch(e) { continue; }
+          let data;
+          try {
+            const jsonStr = line.slice(6).trim();
+            if (!jsonStr) continue;
+            data = JSON.parse(jsonStr);
+          } catch(e) { continue; }
           setActiveStep(data.node);
           setSteps(prev => prev.includes(data.node) ? prev : [...prev, data.node]);
           if (data.node === "writer" && data.state?.writer?.final_report) {
