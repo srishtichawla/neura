@@ -15,11 +15,14 @@ def dense_search(query: str, top_k=15) -> list[dict]:
     try:
         embedding = get_embedding(query)
         conn = get_conn(); cur = conn.cursor()
+        vec = "[" + ",".join(map(str, embedding)) + "]"
         cur.execute("""
             SELECT id, content, source, metadata,
                    1 - (embedding <=> %s::vector) AS score
-            FROM documents ORDER BY score DESC LIMIT %s
-        """, (embedding, top_k))
+            FROM documents
+            WHERE embedding IS NOT NULL
+            ORDER BY embedding <=> %s::vector LIMIT %s
+        """, (vec, vec, top_k))
         rows = cur.fetchall(); cur.close(); conn.close()
         return [{"id": r[0], "content": r[1], "source": r[2], "metadata": r[3], "dense_score": float(r[4])} for r in rows]
     except Exception as e:

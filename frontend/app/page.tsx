@@ -15,6 +15,8 @@ const AGENT_ORDER = ["rag_retriever","researcher","fact_checker","summarizer","w
 
 interface DocInfo { filename: string; size_mb: number; chunks: number; pages: number|null; }
 
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "https://neura-e4cg.onrender.com").replace(/\/$/, "");
+
 export default function Home() {
   const [tab, setTab] = useState<"research"|"history">("research");
   const [topic, setTopic] = useState("");
@@ -50,7 +52,7 @@ export default function Home() {
     setLoading(true); let buffer = ""; setSteps([]); setStreamedReport("");
     setFullReport(""); setCitations([]); setActiveStep(""); setShowCitations(false);
     try {
-      const res = await fetch("https://neura-e4cg.onrender.com/api/research/stream", {
+      const res = await fetch(`${API_URL}/api/research/stream`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic }),
       });
@@ -89,21 +91,34 @@ export default function Home() {
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 25 * 1024 * 1024) {
+      setUploadError("File is too large (max 25 MB)");
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
     setUploading(true); setUploadError("");
     const form = new FormData();
     form.append("file", file);
+    const controller = new AbortController();
+    // Render free tier can take ~60s to wake up, then ingest takes a while
+    const timeout = setTimeout(() => controller.abort(), 180000);
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 60000);
-      const res = await fetch("https://neura-e4cg.onrender.com/api/ingest", { 
-        method: "POST", 
+      const res = await fetch(`${API_URL}/api/ingest`, {
+        method: "POST",
         body: form,
-        signal: controller.signal
+        signal: controller.signal,
       });
-      clearTimeout(timeout);
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Upload failed");
+        // Error bodies are not always JSON (proxy/HTML 502/504 pages)
+        let message = `Upload failed (HTTP ${res.status})`;
+        try {
+          const err = await res.json();
+          if (typeof err.detail === "string") message = err.detail;
+        } catch {
+          if (res.status === 502 || res.status === 503 || res.status === 504)
+            message = "Server is waking up or overloaded — please try again in a minute";
+        }
+        throw new Error(message);
       }
       const data = await res.json();
       setDocs(prev => [...prev, {
@@ -112,9 +127,12 @@ export default function Home() {
         chunks: data.chunks_ingested,
         pages: data.pages,
       }]);
-    } catch(err: any) {
-      setUploadError(err.message || "Upload failed");
+    } catch (err: any) {
+      if (err?.name === "AbortError") setUploadError("Upload timed out — the server may be waking up. Please try again.");
+      else if (err instanceof TypeError) setUploadError("Cannot reach the server. Check your connection or try again in a minute.");
+      else setUploadError(err?.message || "Upload failed");
     } finally {
+      clearTimeout(timeout);
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
     }
