@@ -50,7 +50,7 @@ def compute_bm25_tokens(text: str) -> dict:
     return freq
 
 
-def ingest_text(text: str, source: str = "manual", metadata: dict | None = None) -> int:
+def ingest_text(text: str, source: str = "manual", metadata: dict | None = None, user_id: int | None = None) -> int:
     metadata = metadata or {}
     text = clean_text(text)
     source = clean_text(source) or "upload"
@@ -68,6 +68,7 @@ def ingest_text(text: str, source: str = "manual", metadata: dict | None = None)
             source,
             "[" + ",".join(map(str, emb)) + "]",   # pgvector text format
             json.dumps(compute_bm25_tokens(chunk)),
+            user_id,
         )
         for chunk, emb in zip(chunks, embeddings)
     ]
@@ -75,11 +76,14 @@ def ingest_text(text: str, source: str = "manual", metadata: dict | None = None)
     conn = get_conn()
     try:
         cur = conn.cursor()
+        # Re-uploading the same file name replaces the old copy (no duplicates)
+        if user_id is not None:
+            cur.execute("DELETE FROM documents WHERE user_id = %s AND source = %s", (user_id, source))
         execute_values(
             cur,
-            "INSERT INTO documents (content, metadata, source, embedding, bm25_tokens) VALUES %s",
+            "INSERT INTO documents (content, metadata, source, embedding, bm25_tokens, user_id) VALUES %s",
             rows,
-            template="(%s, %s::jsonb, %s, %s::vector, %s::jsonb)",
+            template="(%s, %s::jsonb, %s, %s::vector, %s::jsonb, %s)",
             page_size=INSERT_PAGE_SIZE,
         )
         conn.commit()

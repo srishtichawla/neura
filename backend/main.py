@@ -23,8 +23,10 @@ def root():
 
 try:
     from api.routes import router
+    from api.account import router as account_router
     from db.postgres import init_db
     app.include_router(router, prefix="/api")
+    app.include_router(account_router, prefix="/api")
     init_db()
     print("✅ All systems started")
 except Exception as e:

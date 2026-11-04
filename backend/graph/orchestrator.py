@@ -8,6 +8,7 @@ from agents.writer import writer_node
 
 class ResearchState(TypedDict, total=False):
     topic: str
+    user_id: int
     queries: list
     web_results: list
     rag_results: list

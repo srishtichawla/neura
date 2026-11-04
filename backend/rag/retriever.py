@@ -11,7 +11,7 @@ co = cohere.Client(os.environ["COHERE_API_KEY"])
 def get_embedding(text: str) -> list[float]:
     return openai_client.embeddings.create(model="text-embedding-3-small", input=text).data[0].embedding
 
-def dense_search(query: str, top_k=15) -> list[dict]:
+def dense_search(query: str, user_id: int | None = None, top_k=15) -> list[dict]:
     try:
         embedding = get_embedding(query)
         conn = get_conn(); cur = conn.cursor()
@@ -20,16 +20,16 @@ def dense_search(query: str, top_k=15) -> list[dict]:
             SELECT id, content, source, metadata,
                    1 - (embedding <=> %s::vector) AS score
             FROM documents
-            WHERE embedding IS NOT NULL
+            WHERE embedding IS NOT NULL AND user_id = %s
             ORDER BY embedding <=> %s::vector LIMIT %s
-        """, (vec, vec, top_k))
+        """, (vec, user_id, vec, top_k))
         rows = cur.fetchall(); cur.close(); conn.close()
         return [{"id": r[0], "content": r[1], "source": r[2], "metadata": r[3], "dense_score": float(r[4])} for r in rows]
     except Exception as e:
         print(f"  ⚠️ Dense search error: {e}")
         return []
 
-def sparse_search(query: str, top_k=15) -> list[dict]:
+def sparse_search(query: str, user_id: int | None = None, top_k=15) -> list[dict]:
     try:
         terms = list(set(query.lower().split()))
         conn = get_conn(); cur = conn.cursor()
@@ -38,8 +38,9 @@ def sparse_search(query: str, top_k=15) -> list[dict]:
                    (SELECT COALESCE(SUM((bm25_tokens->>t)::float), 0)
                     FROM unnest(%s::text[]) t WHERE bm25_tokens ? t) AS score
             FROM documents
+            WHERE user_id = %s
             ORDER BY score DESC LIMIT %s
-        """, (terms, top_k))
+        """, (terms, user_id, top_k))
         rows = cur.fetchall(); cur.close(); conn.close()
         return [{"id": r[0], "content": r[1], "source": r[2], "metadata": r[3], "sparse_score": float(r[4])} for r in rows]
     except Exception as e:
@@ -74,8 +75,10 @@ def rerank(query: str, docs: list[dict], top_n=5) -> list[dict]:
         print(f"  ⚠️ Rerank error: {e} — using top-k instead")
         return docs[:top_n]
 
-def retrieve(query: str, top_n=5) -> list[dict]:
-    dense = dense_search(query)
-    sparse = sparse_search(query)
+def retrieve(query: str, user_id: int | None = None, top_n=5) -> list[dict]:
+    if user_id is None:  # never search anonymous/other people's documents
+        return []
+    dense = dense_search(query, user_id)
+    sparse = sparse_search(query, user_id)
     merged = rrf_merge(dense, sparse)
     return rerank(query, merged, top_n)

@@ -1,25 +1,26 @@
 import json
 import openai
 import psycopg2
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from graph.orchestrator import build_graph
 from rag.ingest import ingest_text
+from auth import current_user
+from db.postgres import get_conn
 
 router = APIRouter()
-uploaded_docs = []  # in-memory store of uploaded files
 
 class ResearchRequest(BaseModel):
     topic: str
 
 @router.post("/research/stream")
-async def stream_research(req: ResearchRequest):
+async def stream_research(req: ResearchRequest, user: dict = Depends(current_user)):
     graph = build_graph()
     async def event_stream():
         try:
-            async for event in graph.astream({"topic": req.topic}):
+            async for event in graph.astream({"topic": req.topic, "user_id": user["id"]}):
                 node_name = list(event.keys())[0]
                 yield f"data: {json.dumps({'node': node_name, 'state': event})}\n\n"
             yield f"data: {json.dumps({'node': 'done'})}\n\n"
@@ -29,9 +30,9 @@ async def stream_research(req: ResearchRequest):
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 @router.post("/research")
-async def run_research(req: ResearchRequest):
+async def run_research(req: ResearchRequest, user: dict = Depends(current_user)):
     graph = build_graph()
-    result = await graph.ainvoke({"topic": req.topic})
+    result = await graph.ainvoke({"topic": req.topic, "user_id": user["id"]})
     return {"report": result.get("final_report",""), "citations": result.get("citations",[])}
 
 MAX_UPLOAD_MB = 25
@@ -68,17 +69,18 @@ def _extract_text(content: bytes, filename: str):
     raise HTTPException(400, "File must be UTF-8 text or PDF")
 
 
-def _process_upload(content: bytes, filename: str):
+def _process_upload(content: bytes, filename: str, user_id: int, size_mb: float):
     """Blocking: extract text + embed + store. Runs in a worker thread."""
     text, total_pages = _extract_text(content, filename)
-    count = ingest_text(text, source=filename)
+    count = ingest_text(text, source=filename, user_id=user_id,
+                        metadata={"size_mb": size_mb, "pages": total_pages})
     if count == 0:
         raise HTTPException(400, "No text found in the file")
     return count, total_pages
 
 
 @router.post("/ingest")
-async def ingest_document(file: UploadFile = File(...)):
+async def ingest_document(file: UploadFile = File(...), user: dict = Depends(current_user)):
     filename = file.filename or "upload"
     if not filename.lower().endswith(ALLOWED_EXTENSIONS):
         raise HTTPException(400, f"Unsupported file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}")
@@ -92,7 +94,7 @@ async def ingest_document(file: UploadFile = File(...)):
 
     try:
         # Run blocking work (PDF parsing, OpenAI calls, DB writes) off the event loop
-        count, total_pages = await run_in_threadpool(_process_upload, content, filename)
+        count, total_pages = await run_in_threadpool(_process_upload, content, filename, user["id"], size_mb)
     except HTTPException:
         raise
     except openai.AuthenticationError:
@@ -108,14 +110,6 @@ async def ingest_document(file: UploadFile = File(...)):
         import traceback; traceback.print_exc()
         raise HTTPException(500, f"Ingest failed: {type(e).__name__}: {e}")
 
-    doc_info = {
-        "filename": filename,
-        "size_mb": size_mb,
-        "chunks": count,
-        "pages": total_pages,
-    }
-    uploaded_docs.append(doc_info)
-
     return {
         "status": "success",
         "chunks_ingested": count,
@@ -125,8 +119,23 @@ async def ingest_document(file: UploadFile = File(...)):
     }
 
 @router.get("/documents")
-async def list_documents():
-    return {"documents": uploaded_docs}
+async def list_documents(user: dict = Depends(current_user)):
+    def _q():
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("""SELECT source, COUNT(*), (array_agg(metadata ORDER BY id))[1]
+                           FROM documents WHERE user_id = %s
+                           GROUP BY source ORDER BY MIN(id)""", (user["id"],))
+            out = []
+            for source, chunks, meta in cur.fetchall():
+                meta = meta or {}
+                out.append({"filename": source, "chunks": chunks,
+                            "size_mb": meta.get("size_mb", 0), "pages": meta.get("pages")})
+            return out
+        finally:
+            conn.close()
+    return {"documents": await run_in_threadpool(_q)}
 
 @router.get("/health")
 async def health():

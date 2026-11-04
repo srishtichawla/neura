@@ -73,6 +73,31 @@ def init_db():
 
         cur.execute("CREATE INDEX IF NOT EXISTS documents_source_idx ON documents (source);")
         conn.commit()
+
+        # ---- Accounts, per-user documents, saved reports ----
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS reports (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                topic TEXT NOT NULL,
+                report TEXT NOT NULL,
+                citations JSONB NOT NULL DEFAULT '[]',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS reports_user_idx ON reports (user_id, created_at DESC);")
+        # Each document chunk belongs to a user (older rows stay NULL = nobody's)
+        cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;")
+        cur.execute("CREATE INDEX IF NOT EXISTS documents_user_idx ON documents (user_id);")
+        conn.commit()
         cur.close()
         conn.close()
         print("✅ Database initialized")

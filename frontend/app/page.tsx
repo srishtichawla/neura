@@ -1,7 +1,8 @@
 "use client";
 import { useState, useRef, useCallback, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
-import { useStore, Report } from "../lib/store";
+import { useStore, Report, API_URL } from "../lib/store";
+import AuthScreen from "../components/AuthScreen";
 
 const AGENT_LABELS: Record<string, { label: string; icon: string }> = {
   rag_retriever: { label: "Searching knowledge base", icon: "📚" },
@@ -14,8 +15,6 @@ const AGENT_LABELS: Record<string, { label: string; icon: string }> = {
 const AGENT_ORDER = ["rag_retriever","researcher","fact_checker","summarizer","writer","done"];
 
 interface DocInfo { filename: string; size_mb: number; chunks: number; pages: number|null; }
-
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "https://neura-e4cg.onrender.com").replace(/\/$/, "");
 
 export default function Home() {
   const [tab, setTab] = useState<"research"|"history">("research");
@@ -33,9 +32,23 @@ export default function Home() {
   const [selectedHistory, setSelectedHistory] = useState<Report | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const { reports, saveReport, deleteReport } = useStore();
+  const { reports, saveReport, deleteReport, token, user, hydrated, logout, fetchReports } = useStore();
 
-  // Load existing docs on mount
+  // Restore the saved login after the page loads (stays logged in across tabs/refreshes)
+  useEffect(() => {
+    Promise.resolve(useStore.persist.rehydrate()).then(() => useStore.setState({ hydrated: true }));
+  }, []);
+
+  // Once logged in: load this account's saved reports and uploaded documents
+  useEffect(() => {
+    if (!hydrated) return;
+    if (!token) { setDocs([]); setSelectedHistory(null); return; }
+    fetchReports();
+    fetch(`${API_URL}/api/documents`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => { if (r.status === 401) { logout(); return null; } return r.ok ? r.json() : null; })
+      .then(d => { if (d?.documents) setDocs(d.documents); })
+      .catch(() => {});
+  }, [hydrated, token]);
   
 
   const typewrite = useCallback((text: string) => {
@@ -53,9 +66,12 @@ export default function Home() {
     setFullReport(""); setCitations([]); setActiveStep(""); setShowCitations(false);
     try {
       const res = await fetch(`${API_URL}/api/research/stream`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ topic }),
       });
+      if (res.status === 401) { logout(); return; }
+      if (!res.ok) throw new Error(`Research failed (HTTP ${res.status})`);
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       while (true) {
@@ -105,9 +121,11 @@ export default function Home() {
     try {
       const res = await fetch(`${API_URL}/api/ingest`, {
         method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
         body: form,
         signal: controller.signal,
       });
+      if (res.status === 401) logout();
       if (!res.ok) {
         // Error bodies are not always JSON (proxy/HTML 502/504 pages)
         let message = `Upload failed (HTTP ${res.status})`;
@@ -162,6 +180,9 @@ export default function Home() {
     w.document.close(); w.print();
   };
 
+  if (!hydrated) return <div className="relative min-h-screen z-10" />;
+  if (!token) return <AuthScreen />;
+
   return (
     <div className="relative min-h-screen z-10">
       {/* HEADER */}
@@ -201,7 +222,8 @@ export default function Home() {
 
         <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
           <span style={{width:"8px",height:"8px",background:"#4ade80",borderRadius:"50%",boxShadow:"0 0 8px #4ade80",animation:"pulse 2s infinite"}}/>
-          <span style={{fontSize:"12px",color:"#4b5563",fontWeight:600}}>Live</span>
+          <span style={{fontSize:"12px",color:"#6b7280",fontWeight:600,maxWidth:"180px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.email}</span>
+          <button onClick={logout} style={{marginLeft:"6px",padding:"6px 14px",borderRadius:"8px",fontSize:"12px",fontWeight:600,cursor:"pointer",background:"transparent",color:"#9ca3af",border:"1px solid rgba(255,255,255,0.1)"}}>Log out</button>
         </div>
       </header>
 
@@ -377,7 +399,7 @@ export default function Home() {
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"2rem"}}>
               <div>
                 <h2 style={{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:"1.75rem",background:"linear-gradient(135deg,#c4b5fd,#00d4ff)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>Saved Reports</h2>
-                <p style={{fontSize:"13px",color:"#374151",marginTop:"4px"}}>{reports.length} report{reports.length!==1?"s":""} · auto-saved locally</p>
+                <p style={{fontSize:"13px",color:"#374151",marginTop:"4px"}}>{reports.length} report{reports.length!==1?"s":""} · saved to your account</p>
               </div>
               {selectedHistory&&<button onClick={()=>setSelectedHistory(null)} style={{padding:"8px 18px",borderRadius:"10px",fontSize:"13px",fontWeight:600,cursor:"pointer",background:"transparent",color:"#6b7280",border:"1px solid rgba(255,255,255,0.08)"}}>← Back</button>}
             </div>
